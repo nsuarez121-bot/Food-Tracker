@@ -17,7 +17,7 @@ export async function POST(request) {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-5",
         max_tokens: 1500,
         system: `You are a recipe parser. Extract recipe details and respond ONLY with a JSON object, no markdown:
 {
