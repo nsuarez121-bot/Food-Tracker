@@ -49,19 +49,15 @@ export default function FoodTracker() {
   const [nameInput, setNameInput] = useState("");
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await window.storage?.get(STORAGE_KEY);
-        if (res?.value) setData(JSON.parse(res.value));
-        else setData(DEFAULT_PROFILES);
-      } catch { setData(DEFAULT_PROFILES); }
-    };
-    load();
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) setData(JSON.parse(raw));
+      else setData(DEFAULT_PROFILES);
+    } catch { setData(DEFAULT_PROFILES); }
   }, []);
 
-  const save = async (newData) => {
+  const save = (newData) => {
     setData(newData);
-    try { await window.storage?.set(STORAGE_KEY, JSON.stringify(newData)); } catch {}
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(newData)); } catch {}
   };
 
@@ -85,20 +81,20 @@ export default function FoodTracker() {
       const d = today();
       if (!newData[activeUser].logs[d]) newData[activeUser].logs[d] = [];
       newData[activeUser].logs[d] = [meal, ...newData[activeUser].logs[d]];
-      await save(newData); setInput("");
+      save(newData); setInput("");
     } catch { setError("Couldn't parse that meal. Try being more specific."); }
     setLoading(false);
   };
 
-  const deleteMeal = async (id) => { const newData = { ...data }; newData[activeUser].logs[today()] = todayLogs.filter(m => m.id !== id); await save(newData); };
+  const deleteMeal = (id) => { const newData = { ...data }; newData[activeUser].logs[today()] = todayLogs.filter(m => m.id !== id); save(newData); };
 
-  const saveGoals = async () => {
+  const saveGoals = () => {
     const newData = { ...data };
     newData[activeUser].goals = { calories: Number(goalEdit.calories), protein: Number(goalEdit.protein), carbs: Number(goalEdit.carbs), fat: Number(goalEdit.fat) };
-    await save(newData); setTab("log");
+    save(newData); setTab("log");
   };
 
-  const saveName = async () => { const newData = { ...data }; newData[activeUser].name = nameInput; await save(newData); setEditingName(false); };
+  const saveName = () => { const newData = { ...data }; newData[activeUser].name = nameInput; save(newData); setEditingName(false); };
 
   if (!data) return <div style={{ background: "#0f0f1a", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff" }}>Loading...</div>;
 
