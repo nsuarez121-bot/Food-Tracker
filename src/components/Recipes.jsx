@@ -56,38 +56,14 @@ export default function Recipes() {
     if (!input.trim() && !image) return;
     setLoading(true);
     try {
-      const messages = image
-        ? [{ role: "user", content: [
-            { type: "image", source: { type: "base64", media_type: "image/jpeg", data: image } },
-            { type: "text", text: input ? `Recipe text: ${input}\n\nExtract the recipe details.` : "Extract the recipe details from this image." }
-          ]}]
-        : [{ role: "user", content: input }];
-
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("/api/parse-recipe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1500,
-          system: `You are a recipe parser. Extract recipe details and respond ONLY with a JSON object, no markdown:
-{
-  "name": "recipe name",
-  "servings": number,
-  "prepTime": "e.g. 20 mins",
-  "cookTime": "e.g. 30 mins",
-  "ingredients": [
-    { "item": "ingredient name", "amount": "e.g. 2 cups", "optional": false }
-  ],
-  "steps": ["step 1", "step 2"],
-  "tags": ["e.g. Italian", "Chicken", "Quick"]
-}`,
-          messages,
-        }),
+        body: JSON.stringify({ text: input, image }),
       });
       const data = await res.json();
-      const text = data.content?.[0]?.text || "{}";
-      const recipe = JSON.parse(text.replace(/```json|```/g, "").trim());
-      setParsed(recipe);
+      if (data.error) throw new Error(data.error);
+      setParsed(data.recipe);
     } catch (e) { console.error(e); }
     setLoading(false);
   };
