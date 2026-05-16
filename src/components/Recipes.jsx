@@ -23,6 +23,7 @@ export default function Recipes() {
   const [loading, setLoading] = useState(false);
   const [parsed, setParsed] = useState(null);
   const [loaded, setLoaded] = useState(false);
+  const [manualItem, setManualItem] = useState("");
   const fileRef = useRef();
 
   useEffect(() => { loadAll(); }, []);
@@ -134,6 +135,14 @@ export default function Recipes() {
     await saveGroceryToDb(updated);
     setGroceryList(updated);
   };
+  const addManualItem = async () => {
+  if (!manualItem.trim()) return;
+  const newItem = { id: (Date.now() + Math.random()).toString(), item: manualItem.trim(), amount: "", recipe: "Manual", checked: false };
+  const updated = [...groceryList, newItem];
+  await saveGroceryToDb(updated);
+  setGroceryList(updated);
+  setManualItem("");
+};
 
   if (!loaded) return <div style={{ padding: 40, textAlign: "center", color: "#888", fontFamily: "Georgia, serif" }}>Loading...</div>;
 
@@ -144,7 +153,17 @@ export default function Recipes() {
         <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "#1a1a1a" }}>Grocery List</h1>
         <p style={{ margin: "4px 0 0", fontSize: 12, color: "#999", fontStyle: "italic" }}>{groceryList.filter(i => !i.checked).length} items remaining</p>
       </div>
-      <div style={{ padding: "12px 16px" }}>
+      <div style={{ padding: "12px 16px" }}>{/* Manual add */}
+<div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+  <input
+    value={manualItem}
+    onChange={e => setManualItem(e.target.value)}
+    onKeyDown={e => e.key === "Enter" && addManualItem()}
+    placeholder="Add any item… e.g. toilet paper"
+    style={{ flex: 1, background: "#fff", border: "1px solid #ddd", borderRadius: 8, padding: "9px 12px", fontSize: 13, fontFamily: "Georgia, serif", outline: "none", color: "#333" }}
+  />
+  <button onClick={addManualItem} style={{ padding: "9px 16px", borderRadius: 8, border: "none", background: "#1a1a1a", color: "#fff", fontSize: 13, cursor: "pointer", fontFamily: "Georgia, serif" }}>Add</button>
+</div>
         {groceryList.length === 0 ? (
           <div style={{ textAlign: "center", padding: "50px 0", color: "#bbb", fontStyle: "italic", fontSize: 14 }}>No items yet.</div>
         ) : (
