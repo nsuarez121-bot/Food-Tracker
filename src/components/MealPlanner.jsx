@@ -1,8 +1,15 @@
 "use client";
 import { useState, useEffect } from "react";
 
-const STORAGE_KEY = "pantry-inventory-v1";
-const PLAN_KEY = "meal-plan-v1";
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+const headers = {
+  "Content-Type": "application/json",
+  "apikey": SUPABASE_KEY,
+  "Authorization": `Bearer ${SUPABASE_KEY}`,
+  "Prefer": "return=representation",
+};
 
 const MEAL_DAYS = ["Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const PREP_DAY = "Sunday";
@@ -32,26 +39,38 @@ export default function MealPlanner() {
   const [groceryLoading, setGroceryLoading] = useState(false);
   const [notes, setNotes] = useState({});
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const pantryRaw = localStorage.getItem(STORAGE_KEY);
-        if (pantryRaw) setPantryItems(JSON.parse(pantryRaw));
-        const planRaw = localStorage.getItem(PLAN_KEY);
-        if (planRaw) { const saved = JSON.parse(planRaw); if (saved.plan) setPlan(saved.plan); if (saved.notes) setNotes(saved.notes); if (saved.groceryList) setGroceryList(saved.groceryList); }
-      } catch {}
-      setLoaded(true);
-    };
-    load();
-  }, []);
+  useEffect(() => { loadAll(); }, []);
+
+  const loadAll = async () => {
+    try {
+      const [pRes, mRes] = await Promise.all([
+        fetch(`${SUPABASE_URL}/rest/v1/pantry_items?select=*`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/meal_plan?select=*`, { headers }),
+      ]);
+      const [p, m] = await Promise.all([pRes.json(), mRes.json()]);
+      if (Array.isArray(p)) setPantryItems(p);
+      if (Array.isArray(m) && m.length > 0) {
+        const saved = m[0].data;
+        if (saved.plan) setPlan(saved.plan);
+        if (saved.notes) setNotes(saved.notes);
+        if (saved.groceryList) setGroceryList(saved.groceryList);
+      }
+    } catch {}
+    setLoaded(true);
+  };
 
   const savePlan = async (newPlan, newNotes, newGrocery) => {
-    try { localStorage.setItem(PLAN_KEY, JSON.stringify({ plan: newPlan ?? plan, notes: newNotes ?? notes, groceryList: newGrocery ?? groceryList })); } catch {}
+    const data = { plan: newPlan ?? plan, notes: newNotes ?? notes, groceryList: newGrocery ?? groceryList };
+    await fetch(`${SUPABASE_URL}/rest/v1/meal_plan`, {
+      method: "POST",
+      headers: { ...headers, "Prefer": "resolution=merge-duplicates,return=representation" },
+      body: JSON.stringify({ id: "current", data }),
+    });
   };
 
   const pantryText = pantryItems.length > 0
     ? pantryItems.map(i => `${i.name}${i.quantity ? ` (${i.quantity})` : ""}${i.expiry ? ` - use by ${i.expiry}` : ""}`).join(", ")
-    : "No pantry data loaded yet";
+    : "No pantry data yet";
 
   const generatePlan = async () => {
     setLoading(true); setShowGrocery(false);
@@ -61,9 +80,9 @@ export default function MealPlanner() {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514", max_tokens: 1000,
+          model: "claude-sonnet-4-5", max_tokens: 1000,
           system: `You are a helpful meal planner. Respond ONLY with a valid JSON array, no markdown.\nEach element: { "day": "...", "name": "...", "description": "one short sentence", "usesExpiring": true/false, "mainIngredients": ["...", "..."] }`,
-          messages: [{ role: "user", content: `Plan dinners for these days only: ${unlockedDays.join(", ")}.\nSunday is meal prep day — suggest meals that reuse roasted chicken/veggies (wraps, stir fries, grain bowls, pasta).\nPantry: ${pantryText}.\n${extras ? `Extra ingredients we can buy: ${extras}.` : ""}\n${lockedMeals ? `Already locked: ${lockedMeals}` : ""}\nPrioritise expiring items. Max 5 meals. Return only unlocked days as JSON array.` }]
+          messages: [{ role: "user", content: `Plan dinners for: ${unlockedDays.join(", ")}.\nSunday is meal prep day — suggest meals using roasted chicken/veggies (wraps, stir fries, grain bowls).\nPantry: ${pantryText}.\n${extras ? `Extra ingredients: ${extras}.` : ""}\n${lockedMeals ? `Locked: ${lockedMeals}` : ""}\nPrioritise expiring items. Return only unlocked days as JSON array.` }]
         })
       });
       const data = await res.json();
@@ -82,9 +101,9 @@ export default function MealPlanner() {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514", max_tokens: 400,
-          system: `You are a meal planner. Respond ONLY with a single JSON object, no markdown.\nFormat: { "day": "...", "name": "...", "description": "one short sentence", "usesExpiring": true/false, "mainIngredients": ["...", "..."] }`,
-          messages: [{ role: "user", content: `Suggest a different dinner for ${day}.\nDon't repeat: ${current}.\nOther meals this week: ${otherMeals.join(", ")}.\nPantry: ${pantryText}.\n${swapPrompt ? `Request: ${swapPrompt}` : ""}\nReturn one meal as JSON.` }]
+          model: "claude-sonnet-4-5", max_tokens: 400,
+          system: `Meal planner. Respond ONLY with single JSON object: { "day": "...", "name": "...", "description": "...", "usesExpiring": false, "mainIngredients": [] }`,
+          messages: [{ role: "user", content: `Different dinner for ${day}. Not: ${current}. Others: ${otherMeals.join(", ")}. Pantry: ${pantryText}. ${swapPrompt ? `Request: ${swapPrompt}` : ""}` }]
         })
       });
       const data = await res.json();
@@ -105,9 +124,9 @@ export default function MealPlanner() {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514", max_tokens: 800,
-          system: `You are a shopping assistant. Respond ONLY with a JSON array of strings, no markdown.`,
-          messages: [{ role: "user", content: `Meal plan:\n${mealsText}\n\nPantry: ${pantryText}\n\nWhat do we need to buy? Only missing items. Return JSON array of short strings.` }]
+          model: "claude-sonnet-4-5", max_tokens: 800,
+          system: `Shopping assistant. Respond ONLY with a JSON array of strings.`,
+          messages: [{ role: "user", content: `Meals:\n${mealsText}\n\nPantry: ${pantryText}\n\nWhat to buy? Only missing. Return JSON array.` }]
         })
       });
       const data = await res.json();
@@ -128,17 +147,16 @@ export default function MealPlanner() {
       <div style={{ padding: "24px 20px 16px", borderBottom: "1px solid #e8e0d0", background: "#fff" }}>
         <div style={{ fontSize: 11, letterSpacing: 2, color: "#bbb", textTransform: "uppercase", marginBottom: 4 }}>Week planner</div>
         <h1 style={{ margin: "0 0 6px", fontSize: 22, fontWeight: 700, color: "#1a1a1a" }}>This week's dinners</h1>
-        <p style={{ margin: 0, fontSize: 13, color: "#999" }}>{pantryItems.length > 0 ? `${pantryItems.length} items in your pantry` : "No pantry data — add items in the pantry tracker first"}</p>
+        <p style={{ margin: 0, fontSize: 13, color: "#999" }}>{pantryItems.length > 0 ? `${pantryItems.length} items in your pantry` : "No pantry data — add items first"}</p>
       </div>
       <div style={{ padding: "14px 16px", borderBottom: "1px solid #e8e0d0", background: "#f5f0e8" }}>
         <label style={{ fontSize: 12, color: "#888", display: "block", marginBottom: 6 }}>Extra ingredients you're happy to buy</label>
         <div style={{ display: "flex", gap: 8 }}>
-          <input value={extras} onChange={e => setExtras(e.target.value)} onKeyDown={e => e.key === "Enter" && !loading && generatePlan()} placeholder="e.g. chicken breast, pasta, olive oil" style={{ flex: 1, fontSize: 13, padding: "8px 12px", borderRadius: 8, border: "1px solid #ddd", background: "#fff", outline: "none", fontFamily: "Georgia, serif" }} />
-          <button onClick={generatePlan} disabled={loading} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #ddd", background: "#fff", fontSize: 13, cursor: loading ? "not-allowed" : "pointer", fontFamily: "Georgia, serif", whiteSpace: "nowrap" }}>
+          <input value={extras} onChange={e => setExtras(e.target.value)} onKeyDown={e => e.key === "Enter" && !loading && generatePlan()} placeholder="e.g. chicken breast, pasta" style={{ flex: 1, fontSize: 13, padding: "8px 12px", borderRadius: 8, border: "1px solid #ddd", background: "#fff", outline: "none", fontFamily: "Georgia, serif" }} />
+          <button onClick={generatePlan} disabled={loading} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #ddd", background: "#fff", fontSize: 13, cursor: loading ? "not-allowed" : "pointer", fontFamily: "Georgia, serif" }}>
             {loading ? "Planning..." : hasPlan ? "Regenerate" : "Generate plan"}
           </button>
         </div>
-        {hasPlan && <p style={{ margin: "8px 0 0", fontSize: 12, color: "#bbb", fontStyle: "italic" }}>Lock meals you want to keep, then regenerate to replace the rest.</p>}
       </div>
       <div style={{ padding: "12px 16px" }}>
         {!hasPlan && !loading && <div style={{ textAlign: "center", padding: "50px 0", color: "#bbb", fontStyle: "italic", fontSize: 14 }}>Hit "Generate plan" to get your week's dinners.</div>}
@@ -148,7 +166,7 @@ export default function MealPlanner() {
               <div style={{ fontSize: 28 }}>🍗</div>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a", marginBottom: 2 }}>Sunday — Meal prep day</div>
-                <div style={{ fontSize: 12, color: "#999" }}>Roast a big batch of chicken, veggies, or grains to build meals from all week.</div>
+                <div style={{ fontSize: 12, color: "#999" }}>Roast a big batch to build meals from all week.</div>
               </div>
             </div>
           );
@@ -175,7 +193,7 @@ export default function MealPlanner() {
                       {p.meal.mainIngredients.map((ing, i) => <span key={i} style={{ fontSize: 11, padding: "2px 8px", background: "#f5f0e8", border: "1px solid #e8e0d0", borderRadius: 20, color: "#888" }}>{ing}</span>)}
                     </div>
                   )}
-                  <input value={notes[p.day] || ""} onChange={e => updateNote(p.day, e.target.value)} placeholder="Add a note (e.g. double batch, wife doesn't eat fish...)" style={{ width: "100%", fontSize: 12, padding: "6px 10px", borderRadius: 8, border: "1px solid #e8e0d0", background: "#faf8f4", color: "#888", outline: "none", boxSizing: "border-box", fontFamily: "Georgia, serif" }} />
+                  <input value={notes[p.day] || ""} onChange={e => updateNote(p.day, e.target.value)} placeholder="Add a note…" style={{ width: "100%", fontSize: 12, padding: "6px 10px", borderRadius: 8, border: "1px solid #e8e0d0", background: "#faf8f4", color: "#888", outline: "none", boxSizing: "border-box", fontFamily: "Georgia, serif" }} />
                 </div>
               ) : (
                 <div style={{ padding: "12px 14px", fontSize: 13, color: "#bbb", fontStyle: "italic" }}>{loading ? "Planning..." : "No meal yet"}</div>
@@ -191,10 +209,10 @@ export default function MealPlanner() {
             </div>
           );
         })}
-        {hasPlan && <button onClick={generateGroceryList} disabled={groceryLoading} style={{ width: "100%", marginTop: 8, padding: "12px", borderRadius: 10, border: "1px solid #ddd", background: "#fff", color: "#1a1a1a", fontSize: 14, fontWeight: 700, cursor: groceryLoading ? "not-allowed" : "pointer", fontFamily: "Georgia, serif" }}>{groceryLoading ? "Building list..." : "Generate grocery list"}</button>}
+        {hasPlan && <button onClick={generateGroceryList} disabled={groceryLoading} style={{ width: "100%", marginTop: 8, padding: "12px", borderRadius: 10, border: "1px solid #ddd", background: "#fff", color: "#1a1a1a", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "Georgia, serif" }}>{groceryLoading ? "Building list..." : "Generate grocery list"}</button>}
         {showGrocery && groceryList.length > 0 && (
           <div style={{ marginTop: 16, background: "#fff", border: "1px solid #e8e0d0", borderRadius: 12, padding: "14px 16px" }}>
-            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, color: "#1a1a1a" }}>Shopping list</div>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Shopping list</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 12px" }}>
               {groceryList.map((item, i) => <div key={i} style={{ fontSize: 13, color: "#555", padding: "3px 0", display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 5, height: 5, borderRadius: "50%", background: "#ccc", flexShrink: 0, display: "inline-block" }} />{item}</div>)}
             </div>
