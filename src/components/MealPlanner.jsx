@@ -41,13 +41,16 @@ export default function MealPlanner() {
 
   useEffect(() => { loadAll(); }, []);
 
+  const [prefs, setPrefs] = useState({ hardNos: [], cuisineLoves: [], cuisineHates: [], dietaryNeeds: [] });
+
   const loadAll = async () => {
     try {
-      const [pRes, mRes] = await Promise.all([
+      const [pRes, mRes, prefRes] = await Promise.all([
         fetch(`${SUPABASE_URL}/rest/v1/pantry_items?select=*`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/meal_plan?select=*`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/app_settings?id=eq.preferences`, { headers }),
       ]);
-      const [p, m] = await Promise.all([pRes.json(), mRes.json()]);
+      const [p, m, pref] = await Promise.all([pRes.json(), mRes.json(), prefRes.json()]);
       if (Array.isArray(p)) setPantryItems(p);
       if (Array.isArray(m) && m.length > 0) {
         const saved = m[0].data;
@@ -55,6 +58,7 @@ export default function MealPlanner() {
         if (saved.notes) setNotes(saved.notes);
         if (saved.groceryList) setGroceryList(saved.groceryList);
       }
+      if (Array.isArray(pref) && pref.length > 0) setPrefs(pref[0].data);
     } catch {}
     setLoaded(true);
   };
@@ -82,8 +86,7 @@ export default function MealPlanner() {
         body: JSON.stringify({
           model: "claude-sonnet-4-5", max_tokens: 1000,
           system: `You are a helpful meal planner. Respond ONLY with a valid JSON array, no markdown.\nEach element: { "day": "...", "name": "...", "description": "one short sentence", "usesExpiring": true/false, "mainIngredients": ["...", "..."] }`,
-          messages: [{ role: "user", content: `Plan dinners for: ${unlockedDays.join(", ")}.\nSunday is meal prep day — suggest meals using roasted chicken/veggies (wraps, stir fries, grain bowls).\nPantry: ${pantryText}.\n${extras ? `Extra ingredients: ${extras}.` : ""}\n${lockedMeals ? `Locked: ${lockedMeals}` : ""}\nPrioritise expiring items. Return only unlocked days as JSON array.` }]
-        })
+messages: [{ role: "user", content: `Plan dinners for: ${unlockedDays.join(", ")}.\nSunday is meal prep day — suggest meals using roasted chicken/veggies (wraps, stir fries, grain bowls).\nPantry: ${pantryText}.\n${extras ? `Extra ingredients: ${extras}.` : ""}\n${lockedMeals ? `Locked: ${lockedMeals}` : ""}\n${prefs.hardNos.length > 0 ? `NEVER use these ingredients: ${prefs.hardNos.join(", ")}.` : ""}\n${prefs.cuisineLoves.length > 0 ? `We love these cuisines: ${prefs.cuisineLoves.join(", ")}.` : ""}\n${prefs.cuisineHates.length > 0 ? `We dislike these cuisines: ${prefs.cuisineHates.join(", ")}.` : ""}\n${prefs.dietaryNeeds.length > 0 ? `Dietary needs: ${prefs.dietaryNeeds.join(", ")}.` : ""}\nPrioritise expiring items. Return only unlocked days as JSON array.` }]        })
       });
       const data = await res.json();
       const meals = JSON.parse(data.content?.[0]?.text.replace(/```json|```/g, "").trim() || "[]");
