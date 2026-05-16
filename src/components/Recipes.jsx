@@ -1,9 +1,15 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 
-const RECIPES_KEY = "recipes-v1";
-const PANTRY_KEY = "pantry-inventory-v1";
-const GROCERY_KEY = "grocery-list-v1";
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+const headers = {
+  "Content-Type": "application/json",
+  "apikey": SUPABASE_KEY,
+  "Authorization": `Bearer ${SUPABASE_KEY}`,
+  "Prefer": "return=representation",
+};
 
 export default function Recipes() {
   const [recipes, setRecipes] = useState([]);
@@ -19,36 +25,48 @@ export default function Recipes() {
   const [loaded, setLoaded] = useState(false);
   const fileRef = useRef();
 
-  useEffect(() => {
+  useEffect(() => { loadAll(); }, []);
+
+  const loadAll = async () => {
     try {
-      const r = localStorage.getItem(RECIPES_KEY);
-      if (r) setRecipes(JSON.parse(r));
-      const p = localStorage.getItem(PANTRY_KEY);
-      if (p) setPantryItems(JSON.parse(p));
-      const g = localStorage.getItem(GROCERY_KEY);
-      if (g) setGroceryList(JSON.parse(g));
+      const [rRes, pRes, gRes] = await Promise.all([
+        fetch(`${SUPABASE_URL}/rest/v1/recipes?select=*`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/pantry_items?select=*`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/grocery_list?select=*`, { headers }),
+      ]);
+      const [r, p, g] = await Promise.all([rRes.json(), pRes.json(), gRes.json()]);
+      if (Array.isArray(r)) setRecipes(r.map(row => ({ ...row.data, id: row.id })));
+      if (Array.isArray(p)) setPantryItems(p);
+      if (Array.isArray(g)) setGroceryList(g.map(row => ({ ...row.data, id: row.id })));
     } catch {}
     setLoaded(true);
-  }, []);
-
-  const saveRecipes = (newRecipes) => {
-    setRecipes(newRecipes);
-    try { localStorage.setItem(RECIPES_KEY, JSON.stringify(newRecipes)); } catch {}
   };
 
-  const saveGrocery = (newList) => {
-    setGroceryList(newList);
-    try { localStorage.setItem(GROCERY_KEY, JSON.stringify(newList)); } catch {}
+  const saveRecipeToDb = async (recipe) => {
+    await fetch(`${SUPABASE_URL}/rest/v1/recipes`, {
+      method: "POST",
+      headers: { ...headers, "Prefer": "resolution=merge-duplicates,return=representation" },
+      body: JSON.stringify({ id: recipe.id.toString(), data: recipe }),
+    });
+  };
+
+  const saveGroceryToDb = async (items) => {
+    // Delete all and reinsert
+    await fetch(`${SUPABASE_URL}/rest/v1/grocery_list?id=neq.null`, { method: "DELETE", headers });
+    if (items.length > 0) {
+      await fetch(`${SUPABASE_URL}/rest/v1/grocery_list`, {
+        method: "POST",
+        headers: { ...headers, "Prefer": "resolution=merge-duplicates,return=representation" },
+        body: JSON.stringify(items.map(i => ({ id: i.id.toString(), data: i }))),
+      });
+    }
   };
 
   const handleImage = (e) => {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => {
-      setImage(reader.result.split(",")[1]);
-      setImagePreview(reader.result);
-    };
+    reader.onload = () => { setImage(reader.result.split(",")[1]); setImagePreview(reader.result); };
     reader.readAsDataURL(file);
   };
 
@@ -69,38 +87,53 @@ export default function Recipes() {
   };
 
   const getMissingIngredients = (ingredients) => {
-    return ingredients.filter(ing => {
+    return (ingredients || []).filter(ing => {
       const name = ing.item.toLowerCase();
       return !pantryItems.find(p => p.name.toLowerCase().includes(name) || name.includes(p.name.toLowerCase()));
     });
   };
 
-  const saveRecipe = () => {
+  const saveRecipe = async () => {
     if (!parsed) return;
     const missing = getMissingIngredients(parsed.ingredients);
-    const newRecipe = { ...parsed, id: Date.now(), savedAt: new Date().toISOString(), missingCount: missing.length };
-    saveRecipes([newRecipe, ...recipes]);
+    const newRecipe = { ...parsed, id: Date.now(), savedAt: new Date().toISOString() };
+    await saveRecipeToDb(newRecipe);
+    setRecipes(prev => [newRecipe, ...prev]);
     if (missing.length > 0) {
-      const newItems = missing.map(m => ({ id: Date.now() + Math.random(), item: m.item, amount: m.amount, recipe: parsed.name, checked: false }));
-      const existing = groceryList.filter(g => !newItems.find(n => n.item.toLowerCase() === g.item?.toLowerCase()));
-      saveGrocery([...existing, ...newItems]);
+      const newItems = missing.map(m => ({ id: (Date.now() + Math.random()).toString(), item: m.item, amount: m.amount, recipe: parsed.name, checked: false }));
+      const updated = [...groceryList.filter(g => !newItems.find(n => n.item.toLowerCase() === g.item?.toLowerCase())), ...newItems];
+      await saveGroceryToDb(updated);
+      setGroceryList(updated);
     }
     setParsed(null); setInput(""); setImage(null); setImagePreview(null); setView("list");
   };
 
-  const deleteRecipe = (id) => saveRecipes(recipes.filter(r => r.id !== id));
-
-  const addToGrocery = (recipe) => {
-    const missing = getMissingIngredients(recipe.ingredients);
-    if (missing.length === 0) { alert("You already have everything for this recipe!"); return; }
-    const newItems = missing.map(m => ({ id: Date.now() + Math.random(), item: m.item, amount: m.amount, recipe: recipe.name, checked: false }));
-    const existing = groceryList.filter(g => !newItems.find(n => n.item.toLowerCase() === g.item?.toLowerCase()));
-    saveGrocery([...existing, ...newItems]);
-    alert(`Added ${missing.length} missing ingredients to your grocery list!`);
+  const deleteRecipe = async (id) => {
+    await fetch(`${SUPABASE_URL}/rest/v1/recipes?id=eq.${id}`, { method: "DELETE", headers });
+    setRecipes(prev => prev.filter(r => r.id !== id));
   };
 
-  const toggleGroceryItem = (id) => saveGrocery(groceryList.map(i => i.id === id ? { ...i, checked: !i.checked } : i));
-  const removeGroceryItem = (id) => saveGrocery(groceryList.filter(i => i.id !== id));
+  const addToGrocery = async (recipe) => {
+    const missing = getMissingIngredients(recipe.ingredients);
+    if (missing.length === 0) { alert("You already have everything!"); return; }
+    const newItems = missing.map(m => ({ id: (Date.now() + Math.random()).toString(), item: m.item, amount: m.amount, recipe: recipe.name, checked: false }));
+    const updated = [...groceryList.filter(g => !newItems.find(n => n.item.toLowerCase() === g.item?.toLowerCase())), ...newItems];
+    await saveGroceryToDb(updated);
+    setGroceryList(updated);
+    alert(`Added ${missing.length} items to grocery list!`);
+  };
+
+  const toggleGroceryItem = async (id) => {
+    const updated = groceryList.map(i => i.id === id ? { ...i, checked: !i.checked } : i);
+    await saveGroceryToDb(updated);
+    setGroceryList(updated);
+  };
+
+  const removeGroceryItem = async (id) => {
+    const updated = groceryList.filter(i => i.id !== id);
+    await saveGroceryToDb(updated);
+    setGroceryList(updated);
+  };
 
   if (!loaded) return <div style={{ padding: 40, textAlign: "center", color: "#888", fontFamily: "Georgia, serif" }}>Loading...</div>;
 
@@ -113,7 +146,7 @@ export default function Recipes() {
       </div>
       <div style={{ padding: "12px 16px" }}>
         {groceryList.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "50px 0", color: "#bbb", fontStyle: "italic", fontSize: 14 }}>No items yet — save a recipe to populate this list.</div>
+          <div style={{ textAlign: "center", padding: "50px 0", color: "#bbb", fontStyle: "italic", fontSize: 14 }}>No items yet.</div>
         ) : (
           <>
             {(() => {
@@ -135,7 +168,7 @@ export default function Recipes() {
                 </div>
               ));
             })()}
-            <button onClick={() => saveGrocery(groceryList.filter(i => !i.checked))} style={{ width: "100%", padding: "10px", borderRadius: 8, border: "1px solid #ddd", background: "#fff", color: "#888", fontSize: 13, cursor: "pointer", fontFamily: "Georgia, serif", marginTop: 8 }}>Clear checked items</button>
+            <button onClick={async () => { const updated = groceryList.filter(i => !i.checked); await saveGroceryToDb(updated); setGroceryList(updated); }} style={{ width: "100%", padding: "10px", borderRadius: 8, border: "1px solid #ddd", background: "#fff", color: "#888", fontSize: 13, cursor: "pointer", fontFamily: "Georgia, serif" }}>Clear checked items</button>
           </>
         )}
       </div>
@@ -153,7 +186,7 @@ export default function Recipes() {
           <>
             <div style={{ background: "#fff", borderRadius: 12, padding: 16, border: "1px solid #e8e0d0", marginBottom: 12 }}>
               <label style={lStyle}>Paste recipe text</label>
-              <textarea value={input} onChange={e => setInput(e.target.value)} placeholder="Paste a recipe here — ingredients, steps, anything..." rows={6} style={{ width: "100%", background: "#faf8f4", border: "1px solid #e0d8cc", borderRadius: 8, padding: "10px 12px", fontSize: 13, fontFamily: "Georgia, serif", color: "#333", outline: "none", resize: "vertical", boxSizing: "border-box" }} />
+              <textarea value={input} onChange={e => setInput(e.target.value)} placeholder="Paste a recipe here…" rows={6} style={{ width: "100%", background: "#faf8f4", border: "1px solid #e0d8cc", borderRadius: 8, padding: "10px 12px", fontSize: 13, fontFamily: "Georgia, serif", color: "#333", outline: "none", resize: "vertical", boxSizing: "border-box" }} />
             </div>
             <div style={{ background: "#fff", borderRadius: 12, padding: 16, border: "1px solid #e8e0d0", marginBottom: 16 }}>
               <label style={lStyle}>Or upload a photo of the recipe</label>
@@ -161,13 +194,13 @@ export default function Recipes() {
               {imagePreview ? (
                 <div>
                   <img src={imagePreview} alt="Recipe" style={{ width: "100%", borderRadius: 8, marginBottom: 8, maxHeight: 200, objectFit: "cover" }} />
-                  <button onClick={() => { setImage(null); setImagePreview(null); }} style={{ background: "none", border: "1px solid #ddd", borderRadius: 6, padding: "4px 12px", fontSize: 12, color: "#888", cursor: "pointer", fontFamily: "Georgia, serif" }}>Remove photo</button>
+                  <button onClick={() => { setImage(null); setImagePreview(null); }} style={{ background: "none", border: "1px solid #ddd", borderRadius: 6, padding: "4px 12px", fontSize: 12, color: "#888", cursor: "pointer" }}>Remove photo</button>
                 </div>
               ) : (
                 <button onClick={() => fileRef.current.click()} style={{ width: "100%", padding: "14px", borderRadius: 8, border: "2px dashed #e0d8cc", background: "#faf8f4", color: "#aaa", fontSize: 14, cursor: "pointer", fontFamily: "Georgia, serif" }}>📷 Tap to upload photo</button>
               )}
             </div>
-            <button onClick={parseRecipe} disabled={loading || (!input.trim() && !image)} style={{ width: "100%", padding: "13px", borderRadius: 10, border: "none", background: (!input.trim() && !image) ? "#ddd" : "#1a1a1a", color: "#fff", fontSize: 14, fontWeight: 700, cursor: (!input.trim() && !image) ? "not-allowed" : "pointer", fontFamily: "Georgia, serif" }}>
+            <button onClick={parseRecipe} disabled={loading || (!input.trim() && !image)} style={{ width: "100%", padding: "13px", borderRadius: 10, border: "none", background: (!input.trim() && !image) ? "#ddd" : "#1a1a1a", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "Georgia, serif" }}>
               {loading ? "Reading recipe..." : "Parse Recipe ↗"}
             </button>
           </>
@@ -177,21 +210,16 @@ export default function Recipes() {
               <div style={{ fontSize: 18, fontWeight: 700, color: "#1a1a1a", marginBottom: 4 }}>{parsed.name}</div>
               <div style={{ display: "flex", gap: 12, fontSize: 12, color: "#999", marginBottom: 12 }}>
                 {parsed.servings && <span>🍽 {parsed.servings} servings</span>}
-                {parsed.prepTime && <span>⏱ Prep: {parsed.prepTime}</span>}
-                {parsed.cookTime && <span>🔥 Cook: {parsed.cookTime}</span>}
+                {parsed.prepTime && <span>⏱ {parsed.prepTime}</span>}
+                {parsed.cookTime && <span>🔥 {parsed.cookTime}</span>}
               </div>
-              {parsed.tags?.length > 0 && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 12 }}>
-                  {parsed.tags.map((tag, i) => <span key={i} style={{ fontSize: 11, padding: "2px 8px", background: "#f5f0e8", border: "1px solid #e8e0d0", borderRadius: 20, color: "#888" }}>{tag}</span>)}
-                </div>
-              )}
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a", marginBottom: 8 }}>Ingredients ({parsed.ingredients?.length})</div>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Ingredients ({parsed.ingredients?.length})</div>
               {parsed.ingredients?.map((ing, i) => {
                 const missing = !pantryItems.find(p => p.name.toLowerCase().includes(ing.item.toLowerCase()) || ing.item.toLowerCase().includes(p.name.toLowerCase()));
                 return (
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderBottom: "1px solid #f5f0e8" }}>
                     <div style={{ width: 8, height: 8, borderRadius: "50%", background: missing ? "#ff7043" : "#66bb6a", flexShrink: 0 }} />
-                    <span style={{ fontSize: 13, color: "#333", flex: 1 }}>{ing.item}</span>
+                    <span style={{ fontSize: 13, flex: 1 }}>{ing.item}</span>
                     <span style={{ fontSize: 12, color: "#999" }}>{ing.amount}</span>
                     {missing && <span style={{ fontSize: 10, color: "#ff7043", fontWeight: 600 }}>NEED</span>}
                   </div>
@@ -221,11 +249,6 @@ export default function Recipes() {
         </div>
       </div>
       <div style={{ padding: 16 }}>
-        {selectedRecipe.tags?.length > 0 && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 16 }}>
-            {selectedRecipe.tags.map((tag, i) => <span key={i} style={{ fontSize: 11, padding: "2px 8px", background: "#f5f0e8", border: "1px solid #e8e0d0", borderRadius: 20, color: "#888" }}>{tag}</span>)}
-          </div>
-        )}
         <div style={{ background: "#fff", borderRadius: 12, padding: 16, border: "1px solid #e8e0d0", marginBottom: 12 }}>
           <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>Ingredients</div>
           {selectedRecipe.ingredients?.map((ing, i) => {
@@ -233,7 +256,7 @@ export default function Recipes() {
             return (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid #f5f0e8" }}>
                 <div style={{ width: 8, height: 8, borderRadius: "50%", background: missing ? "#ff7043" : "#66bb6a", flexShrink: 0 }} />
-                <span style={{ fontSize: 13, color: "#333", flex: 1 }}>{ing.item}</span>
+                <span style={{ fontSize: 13, flex: 1 }}>{ing.item}</span>
                 <span style={{ fontSize: 12, color: "#999" }}>{ing.amount}</span>
               </div>
             );
@@ -287,18 +310,13 @@ export default function Recipes() {
                       {recipe.prepTime && <span>⏱ {recipe.prepTime}</span>}
                     </div>
                   </div>
-                  <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 12 }}>
+                  <div style={{ flexShrink: 0, marginLeft: 12 }}>
                     {missing.length > 0
                       ? <span style={{ fontSize: 11, padding: "3px 8px", background: "#fff3e0", border: "1px solid #ffb74d", borderRadius: 20, color: "#e65100", fontWeight: 600 }}>🛒 {missing.length} needed</span>
                       : <span style={{ fontSize: 11, padding: "3px 8px", background: "#e8f5e9", border: "1px solid #a5d6a7", borderRadius: 20, color: "#2e7d32", fontWeight: 600 }}>✓ Ready to cook</span>
                     }
                   </div>
                 </div>
-                {recipe.tags?.length > 0 && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 8 }}>
-                    {recipe.tags.map((tag, i) => <span key={i} style={{ fontSize: 10, padding: "1px 6px", background: "#f5f0e8", border: "1px solid #e8e0d0", borderRadius: 20, color: "#aaa" }}>{tag}</span>)}
-                  </div>
-                )}
               </div>
             );
           })
@@ -311,4 +329,4 @@ export default function Recipes() {
   );
 }
 
-const lStyle = { fontSize: 12, color: "#888", display: "block", marginBottom: 6, letterSpacing: 0.5 };
+const lStyle = { fontSize: 12, color: "#888", display: "block", marginBottom: 6 };
