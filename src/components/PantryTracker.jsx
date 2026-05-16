@@ -55,19 +55,15 @@ export default function PantryTracker() {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await window.storage?.get(STORAGE_KEY);
-        if (res?.value) setItems(JSON.parse(res.value));
-      } catch {}
-      setLoaded(true);
-    };
-    load();
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) setItems(JSON.parse(raw));
+    } catch {}
+    setLoaded(true);
   }, []);
 
-  const save = async (newItems) => {
+  const save = (newItems) => {
     setItems(newItems);
-    try { await window.storage?.set(STORAGE_KEY, JSON.stringify(newItems)); } catch {}
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(newItems)); } catch {}
   };
 
@@ -105,21 +101,21 @@ export default function PantryTracker() {
   const loc = LOCATIONS.find(l => l.id === activeLocation);
   const countByLoc = (lid) => items.filter(i => i.location === lid).length;
 
-  if (!loaded) return <div style={{ padding: 40, textAlign: "center", color: "#888", fontFamily: "Georgia, serif" }}>Loading pantry…</div>;
+  if (!loaded) return <div style={{ background: "#faf8f4", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Georgia, serif", color: "#888" }}>Loading pantry…</div>;
 
   return (
-    <div style={{ background: "#faf8f4", minHeight: "100vh", fontFamily: "Georgia, serif", color: "#2a2a2a", maxWidth: 520, margin: "0 auto" }}>
+    <div style={{ background: "#faf8f4", minHeight: "100vh", fontFamily: "'Georgia', 'Times New Roman', serif", color: "#2a2a2a", maxWidth: 520, margin: "0 auto" }}>
       <div style={{ background: "#fff", borderBottom: "2px solid #e8e0d0", padding: "20px 20px 0" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4 }}>
-          <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700, color: "#1a1a1a" }}>Our Pantry</h1>
+          <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700, letterSpacing: "-0.5px", color: "#1a1a1a" }}>Our Pantry</h1>
           {expiringSoon.length > 0 && (
-            <button onClick={() => setShowExpiringSoon(!showExpiringSoon)} style={{ background: showExpiringSoon ? "#ff7043" : "#fff3e0", border: "1px solid #ff7043", borderRadius: 20, padding: "2px 10px", color: showExpiringSoon ? "#fff" : "#ff7043", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
+            <button onClick={() => setShowExpiringSoon(!showExpiringSoon)} style={{ background: showExpiringSoon ? "#ff7043" : "#fff3e0", border: "1px solid #ff7043", borderRadius: 20, padding: "2px 10px", color: showExpiringSoon ? "#fff" : "#ff7043", fontSize: 11, fontFamily: "Georgia, serif", cursor: "pointer", fontWeight: 600 }}>
               ⚠ {expiringSoon.length} expiring soon
             </button>
           )}
         </div>
         <p style={{ margin: "0 0 14px", fontSize: 12, color: "#999", fontStyle: "italic" }}>{items.length} items across all storage</p>
-        <div style={{ display: "flex" }}>
+        <div style={{ display: "flex", gap: 0 }}>
           {LOCATIONS.map(l => (
             <button key={l.id} onClick={() => { setActiveLocation(l.id); setAdding(false); setEditId(null); }} style={{ flex: 1, padding: "10px 4px", border: "none", background: "transparent", borderBottom: activeLocation === l.id ? `3px solid ${l.color}` : "3px solid transparent", color: activeLocation === l.id ? "#1a1a1a" : "#aaa", fontFamily: "Georgia, serif", fontSize: 13, cursor: "pointer", fontWeight: activeLocation === l.id ? 700 : 400 }}>
               {l.emoji} {l.label}
@@ -128,7 +124,7 @@ export default function PantryTracker() {
           ))}
         </div>
       </div>
-      <div style={{ padding: "12px 16px", display: "flex", gap: 8, background: "#f5f0e8", borderBottom: "1px solid #e8e0d0" }}>
+      <div style={{ padding: "12px 16px", display: "flex", gap: 8, alignItems: "center", background: "#f5f0e8", borderBottom: "1px solid #e8e0d0" }}>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search items…" style={{ flex: 1, background: "#fff", border: "1px solid #ddd", borderRadius: 8, padding: "7px 12px", fontSize: 13, fontFamily: "Georgia, serif", outline: "none", color: "#333" }} />
         <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ background: "#fff", border: "1px solid #ddd", borderRadius: 8, padding: "7px 10px", fontSize: 12, fontFamily: "Georgia, serif", color: "#555", cursor: "pointer", outline: "none" }}>
           <option value="expiry">By expiry</option>
@@ -137,8 +133,8 @@ export default function PantryTracker() {
         </select>
       </div>
       {adding && (
-        <div style={{ background: "#fff", margin: 16, borderRadius: 12, padding: 16, border: `2px solid ${loc.color}` }}>
-          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>{editId ? "Edit Item" : `Add to ${loc.label}`}</div>
+        <div style={{ background: "#fff", margin: 16, borderRadius: 12, padding: 16, border: `2px solid ${loc.color}`, boxShadow: "0 4px 20px rgba(0,0,0,0.08)" }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: "#1a1a1a" }}>{editId ? "Edit Item" : `Add to ${loc.label}`}</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
             <div style={{ gridColumn: "1/-1" }}>
               <label style={labelStyle}>Item name *</label>
@@ -150,7 +146,7 @@ export default function PantryTracker() {
             {editId && <div><label style={labelStyle}>Move to</label><select value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>{LOCATIONS.map(l => <option key={l.id} value={l.id}>{l.label}</option>)}</select></div>}
             <div style={{ gridColumn: "1/-1" }}><label style={labelStyle}>Notes (optional)</label><input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="e.g. opened, half used…" style={inputStyle} /></div>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
             <button onClick={addOrUpdate} style={{ flex: 1, background: loc.color, border: "none", borderRadius: 8, padding: "10px", color: "#fff", fontWeight: 700, fontSize: 13, fontFamily: "Georgia, serif", cursor: "pointer" }}>{editId ? "Save Changes" : "Add Item"}</button>
             <button onClick={cancel} style={{ padding: "10px 16px", background: "none", border: "1px solid #ddd", borderRadius: 8, color: "#888", fontSize: 13, fontFamily: "Georgia, serif", cursor: "pointer" }}>Cancel</button>
           </div>
@@ -168,7 +164,7 @@ export default function PantryTracker() {
                 const days = daysUntilExpiry(item.expiry);
                 const col = expiryColor(days);
                 return (
-                  <div key={item.id} style={{ background: "#fff", borderRadius: 10, padding: "11px 14px", marginBottom: 8, display: "flex", alignItems: "center", gap: 12, border: days !== null && days <= 2 ? `1px solid ${col}66` : "1px solid #ece6da" }}>
+                  <div key={item.id} style={{ background: "#fff", borderRadius: 10, padding: "11px 14px", marginBottom: 8, display: "flex", alignItems: "center", gap: 12, border: days !== null && days <= 2 ? `1px solid ${col}66` : "1px solid #ece6da", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
                     <div style={{ width: 8, height: 8, borderRadius: "50%", background: col, flexShrink: 0 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
@@ -181,7 +177,7 @@ export default function PantryTracker() {
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: 4 }}>
-                      <button onClick={() => startEdit(item)} style={{ background: "none", border: "1px solid #e8e0d0", borderRadius: 6, padding: "4px 8px", color: "#aaa", fontSize: 11, cursor: "pointer" }}>Edit</button>
+                      <button onClick={() => startEdit(item)} style={{ background: "none", border: "1px solid #e8e0d0", borderRadius: 6, padding: "4px 8px", color: "#aaa", fontSize: 11, cursor: "pointer", fontFamily: "Georgia, serif" }}>Edit</button>
                       <button onClick={() => remove(item.id)} style={{ background: "none", border: "1px solid #e8e0d0", borderRadius: 6, padding: "4px 8px", color: "#ddd", fontSize: 12, cursor: "pointer" }}>✕</button>
                     </div>
                   </div>
@@ -192,7 +188,7 @@ export default function PantryTracker() {
         })()}
       </div>
       {!adding && (
-        <button onClick={() => { setAdding(true); setForm({ ...defaultItem(), location: activeLocation }); }} style={{ position: "fixed", bottom: 24, right: "50%", transform: "translateX(50%)", maxWidth: 200, width: "calc(100% - 48px)", background: loc.color, border: "none", borderRadius: 50, padding: "14px 28px", color: "#fff", fontWeight: 700, fontSize: 15, fontFamily: "Georgia, serif", cursor: "pointer" }}>
+        <button onClick={() => { setAdding(true); setForm({ ...defaultItem(), location: activeLocation }); }} style={{ position: "fixed", bottom: 24, right: "50%", transform: "translateX(50%)", maxWidth: 200, width: "calc(100% - 48px)", background: loc.color, border: "none", borderRadius: 50, padding: "14px 28px", color: "#fff", fontWeight: 700, fontSize: 15, fontFamily: "Georgia, serif", cursor: "pointer", boxShadow: `0 6px 24px ${loc.color}66` }}>
           + Add to {loc.label}
         </button>
       )}
