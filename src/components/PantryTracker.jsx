@@ -153,10 +153,13 @@ export default function PantryTracker() {
   };
 
   const confirmImport = async () => {
-    for (const item of importPreview) {
-      await saveItem(item);
+    const toImport = importPreview.filter(i => !i._skip);
+    for (const item of toImport) {
+      const cleanItem = { ...item };
+      delete cleanItem._skip;
+      await saveItem(cleanItem);
     }
-    setItems(prev => [...importPreview, ...prev]);
+    await loadItems();
     setImportPreview(null);
     setImporting(false);
   };
