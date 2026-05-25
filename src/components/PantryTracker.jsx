@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -53,6 +53,14 @@ export default function PantryTracker() {
   const [sortBy, setSortBy] = useState("expiry");
   const [showExpiringSoon, setShowExpiringSoon] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importPreview, setImportPreview] = useState(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [cameraActive, setCameraActive] = useState(false);
+  const fileRef = useRef();
+  const cameraRef = useRef();
+  const videoRef = useRef();
+  const canvasRef = useRef();
 
   useEffect(() => { loadItems(); }, []);
 
@@ -94,9 +102,72 @@ export default function PantryTracker() {
   const startEdit = (item) => { setForm({ ...item }); setEditId(item.id); setActiveLocation(item.location); setAdding(true); };
   const cancel = () => { setAdding(false); setEditId(null); setForm(defaultItem()); };
 
+  const handleImportImage = async (imageData) => {
+    setImportLoading(true);
+    try {
+      const res = await fetch("/api/import-pantry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: imageData }),
+      });
+      const data = await res.json();
+      if (data.items) setImportPreview(data.items);
+    } catch (e) { console.error(e); }
+    setImportLoading(false);
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => handleImportImage(reader.result.split(",")[1]);
+    reader.readAsDataURL(file);
+  };
+
+  const startCamera = async () => {
+    setCameraActive(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      if (videoRef.current) videoRef.current.srcObject = stream;
+    } catch (e) { console.error(e); setCameraActive(false); }
+  };
+
+  const capturePhoto = () => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d").drawImage(video, 0, 0);
+    const imageData = canvas.toDataURL("image/jpeg").split(",")[1];
+    const stream = video.srcObject;
+    stream?.getTracks().forEach(t => t.stop());
+    setCameraActive(false);
+    handleImportImage(imageData);
+  };
+
+  const stopCamera = () => {
+    const stream = videoRef.current?.srcObject;
+    stream?.getTracks().forEach(t => t.stop());
+    setCameraActive(false);
+  };
+
+  const confirmImport = async () => {
+    for (const item of importPreview) {
+      await saveItem(item);
+    }
+    setItems(prev => [...importPreview, ...prev]);
+    setImportPreview(null);
+    setImporting(false);
+  };
+
+  const toggleImportItem = (idx) => {
+    setImportPreview(prev => prev.map((item, i) => i === idx ? { ...item, _skip: !item._skip } : item));
+  };
+
   const locationItems = items.filter(i => {
     const matchLoc = i.location === activeLocation;
-    const matchSearch = !search || i.name.toLowerCase().includes(search.toLowerCase()) || i.category.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = !search || i.name.toLowerCase().includes(search.toLowerCase()) || i.category?.toLowerCase().includes(search.toLowerCase());
     const matchExpiring = !showExpiringSoon || (daysUntilExpiry(i.expiry) !== null && daysUntilExpiry(i.expiry) <= 3);
     return matchLoc && matchSearch && matchExpiring;
   });
@@ -104,7 +175,7 @@ export default function PantryTracker() {
   const sorted = [...locationItems].sort((a, b) => {
     if (sortBy === "expiry") { const da = daysUntilExpiry(a.expiry) ?? 9999; const db = daysUntilExpiry(b.expiry) ?? 9999; return da - db; }
     if (sortBy === "name") return a.name.localeCompare(b.name);
-    if (sortBy === "category") return a.category.localeCompare(b.category);
+    if (sortBy === "category") return a.category?.localeCompare(b.category);
     return 0;
   });
 
@@ -114,16 +185,67 @@ export default function PantryTracker() {
 
   if (!loaded) return <div style={{ background: "#faf8f4", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Georgia, serif", color: "#888" }}>Loading pantry…</div>;
 
+  // Camera view
+  if (cameraActive) return (
+    <div style={{ background: "#000", minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+      <video ref={videoRef} autoPlay playsInline style={{ width: "100%", maxWidth: 520 }} />
+      <canvas ref={canvasRef} style={{ display: "none" }} />
+      <div style={{ display: "flex", gap: 16, marginTop: 20 }}>
+        <button onClick={capturePhoto} style={{ padding: "14px 32px", borderRadius: 50, background: "#fff", border: "none", fontSize: 15, fontWeight: 700, cursor: "pointer", fontFamily: "Georgia, serif" }}>📸 Capture</button>
+        <button onClick={stopCamera} style={{ padding: "14px 24px", borderRadius: 50, background: "transparent", border: "2px solid #fff", color: "#fff", fontSize: 15, cursor: "pointer", fontFamily: "Georgia, serif" }}>Cancel</button>
+      </div>
+    </div>
+  );
+
+  // Import preview
+  if (importPreview) return (
+    <div style={{ background: "#faf8f4", minHeight: "100vh", fontFamily: "Georgia, serif", padding: "0 0 80px" }}>
+      <div style={{ background: "#fff", borderBottom: "2px solid #e8e0d0", padding: "20px 20px 16px" }}>
+        <h1 style={{ margin: "0 0 4px", fontSize: 22, fontWeight: 700, color: "#1a1a1a" }}>Review import</h1>
+        <p style={{ margin: 0, fontSize: 13, color: "#999", fontStyle: "italic" }}>Found {importPreview.length} items — uncheck any you don't want to add</p>
+      </div>
+      <div style={{ padding: "12px 16px" }}>
+        {importPreview.map((item, idx) => (
+          <div key={idx} style={{ background: "#fff", borderRadius: 10, padding: "12px 14px", marginBottom: 8, border: "1px solid #e8e0d0", display: "flex", alignItems: "center", gap: 12, opacity: item._skip ? 0.4 : 1 }}>
+            <input type="checkbox" checked={!item._skip} onChange={() => toggleImportItem(idx)} style={{ width: 18, height: 18, cursor: "pointer" }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: "#1a1a1a" }}>{item.name} {item.quantity && <span style={{ fontSize: 12, color: "#999", fontWeight: 400 }}>{item.quantity}</span>}</div>
+              <div style={{ fontSize: 12, color: "#999" }}>{item.category} · {item.location} · expires {item.expiry}</div>
+              {item.notes && <div style={{ fontSize: 11, color: "#bbb", fontStyle: "italic" }}>{item.notes}</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, padding: "16px", background: "#fff", borderTop: "1px solid #e8e0d0", display: "flex", gap: 8, maxWidth: 520, margin: "0 auto" }}>
+        <button onClick={() => { setImportPreview(null); setImporting(false); }} style={{ flex: 1, padding: "12px", borderRadius: 10, border: "1px solid #ddd", background: "#fff", color: "#888", fontSize: 14, cursor: "pointer", fontFamily: "Georgia, serif" }}>Cancel</button>
+        <button onClick={confirmImport} style={{ flex: 2, padding: "12px", borderRadius: 10, border: "none", background: "#1a1a1a", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "Georgia, serif" }}>
+          Add {importPreview.filter(i => !i._skip).length} items to pantry
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div style={{ background: "#faf8f4", minHeight: "100vh", fontFamily: "'Georgia', serif", color: "#2a2a2a", maxWidth: 520, margin: "0 auto" }}>
       <div style={{ background: "#fff", borderBottom: "2px solid #e8e0d0", padding: "20px 20px 0" }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4 }}>
-          <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700, color: "#1a1a1a" }}>Our Pantry</h1>
-          {expiringSoon.length > 0 && (
-            <button onClick={() => setShowExpiringSoon(!showExpiringSoon)} style={{ background: showExpiringSoon ? "#ff7043" : "#fff3e0", border: "1px solid #ff7043", borderRadius: 20, padding: "2px 10px", color: showExpiringSoon ? "#fff" : "#ff7043", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
-              ⚠ {expiringSoon.length} expiring soon
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+            <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700, color: "#1a1a1a" }}>Our Pantry</h1>
+            {expiringSoon.length > 0 && (
+              <button onClick={() => setShowExpiringSoon(!showExpiringSoon)} style={{ background: showExpiringSoon ? "#ff7043" : "#fff3e0", border: "1px solid #ff7043", borderRadius: 20, padding: "2px 10px", color: showExpiringSoon ? "#fff" : "#ff7043", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
+                ⚠ {expiringSoon.length} expiring
+              </button>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input ref={fileRef} type="file" accept="image/*" onChange={handleFileUpload} style={{ display: "none" }} />
+            <button onClick={() => fileRef.current.click()} title="Import from photo" style={{ background: "none", border: "1px solid #e8e0d0", borderRadius: 8, padding: "4px 10px", fontSize: 12, cursor: "pointer", color: "#888" }}>
+              {importLoading ? "Reading..." : "📷 Import"}
             </button>
-          )}
+            <button onClick={startCamera} title="Scan with camera" style={{ background: "none", border: "1px solid #e8e0d0", borderRadius: 8, padding: "4px 10px", fontSize: 12, cursor: "pointer", color: "#888" }}>
+              🔍 Scan
+            </button>
+          </div>
         </div>
         <p style={{ margin: "0 0 14px", fontSize: 12, color: "#999", fontStyle: "italic" }}>{items.length} items across all storage</p>
         <div style={{ display: "flex" }}>
