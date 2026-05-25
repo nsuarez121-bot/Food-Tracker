@@ -161,12 +161,19 @@ export default function PantryTracker() {
     setCameraActive(false);
   };
 
- const confirmImport = async () => {
+const confirmImport = async () => {
     const toImport = importPreview.filter(i => !i._skip);
     let saved = 0;
     for (const item of toImport) {
-      const cleanItem = { ...item };
-      delete cleanItem._skip;
+      const cleanItem = {
+        id: item.id,
+        name: item.name,
+        category: item.category || "Other",
+        quantity: item.quantity || "",
+        expiry: item.expiry || "",
+        location: item.location || "cupboard",
+        notes: item.notes || "",
+      };
       const ok = await saveItem(cleanItem);
       if (ok) saved++;
     }
