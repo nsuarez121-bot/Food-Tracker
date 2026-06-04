@@ -73,24 +73,25 @@ export default function PantryTracker() {
     setLoaded(true);
   };
 
- const saveItem = async (item) => {
-    try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/pantry_items`, {
-        method: "POST",
-        headers: { ...headers, "Prefer": "resolution=merge-duplicates,return=representation" },
-        body: JSON.stringify(item),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        console.error("Save failed:", err);
-        return false;
-      }
-      return true;
-    } catch (e) {
-      console.error("Save error:", e);
+const saveItem = async (item) => {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/pantry_items`, {
+      method: "POST",
+      headers: { ...headers, "Prefer": "resolution=merge-duplicates,return=representation" },
+      body: JSON.stringify(item),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      console.error("Save failed:", err);
+      alert("Supabase error: " + (err.message || err.hint || JSON.stringify(err))); // ← temp debug
       return false;
     }
-  };
+    return true;
+  } catch (e) {
+    console.error("Save error:", e);
+    return false;
+  }
+};
 
   const deleteItem = async (id) => {
     try {
