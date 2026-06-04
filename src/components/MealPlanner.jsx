@@ -116,14 +116,10 @@ export default function MealPlanner() {
     setGroceryLoading(true); setShowGrocery(true);
     try {
       const mealsText = plan.filter(p => p.meal).map(p => `${p.day}: ${p.meal.name} (needs: ${p.meal.mainIngredients?.join(", ")})`).join("\n");
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-5", max_tokens: 800,
-          system: `Shopping assistant. Respond ONLY with a JSON array of strings.`,
-          messages: [{ role: "user", content: `Meals:\n${mealsText}\n\nPantry: ${pantryText}\n\nWhat to buy? Only missing. Return JSON array.` }]
-        })
-      });
+     const res = await fetch("/api/meal-plan", {
+  method: "POST", headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: ..., system: ..., messages: ... })
+});
       const data = await res.json();
       const list = JSON.parse(data.content?.[0]?.text.replace(/```json|```/g, "").trim() || "[]");
       setGroceryList(list); await savePlan(null, null, list);
