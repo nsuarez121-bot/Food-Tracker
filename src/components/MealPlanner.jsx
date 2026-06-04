@@ -97,15 +97,10 @@ export default function MealPlanner() {
     setSwapLoading(true);
     try {
       const day = plan[idx].day; const current = plan[idx].meal?.name;
-      const otherMeals = plan.filter((_, i) => i !== idx).map(p => p.meal?.name).filter(Boolean);
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-5", max_tokens: 400,
-          system: `Meal planner. Respond ONLY with single JSON object: { "day": "...", "name": "...", "description": "...", "usesExpiring": false, "mainIngredients": [] }`,
-          messages: [{ role: "user", content: `Different dinner for ${day}. Not: ${current}. Others: ${otherMeals.join(", ")}. Pantry: ${pantryText}. ${swapPrompt ? `Request: ${swapPrompt}` : ""}` }]
-        })
-      });
+      const res = await fetch("/api/meal-plan", {
+  method: "POST", headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: ..., system: ..., messages: ... })
+});
       const data = await res.json();
       const meal = JSON.parse(data.content?.[0]?.text.replace(/```json|```/g, "").trim() || "{}");
       const newPlan = plan.map((p, i) => i === idx ? { ...p, meal } : p);
