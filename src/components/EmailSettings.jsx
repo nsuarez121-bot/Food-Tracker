@@ -18,7 +18,7 @@ const daysUntilExpiry = (dateStr) => {
 };
 
 const defaultSettings = {
-  resendKey: "", yourEmail: "", wifeEmail: "", sendDay: "Sunday",
+  yourEmail: "", wifeEmail: "", sendDay: "Sunday",
   essentials: ["milk", "eggs", "bread", "butter", "olive oil"], lastSent: null,
 };
 
@@ -89,8 +89,8 @@ export default function EmailSettings() {
 
   const sendEmail = async (subject, html) => {
     const recipients = [settings.yourEmail, settings.wifeEmail].filter(Boolean);
-    if (recipients.length === 0) throw new Error("No email addresses set");
-    const res = await fetch("/api/send-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apiKey: settings.resendKey, to: recipients, subject, html }) });
+    if (recipients.length === 0) throw new Error("No email addresses set — add them in Settings");
+    const res = await fetch("/api/send-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: recipients, subject, html }) });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Send failed");
     return data;
@@ -131,10 +131,9 @@ export default function EmailSettings() {
         {tab === "settings" && (
           <div>
             <div style={cardStyle}>
-              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 14 }}>Account details</div>
-              <div style={{ marginBottom: 12 }}><label style={lStyle}>Resend API key</label><input type="password" value={settings.resendKey} onChange={e => update("resendKey", e.target.value)} placeholder="re_••••••••••••" style={iStyle} /><div style={{ fontSize: 11, color: "#bbb", marginTop: 4 }}>Stored securely in shared database</div></div>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 14 }}>Email addresses</div>
               <div style={{ marginBottom: 12 }}><label style={lStyle}>Your email</label><input type="email" value={settings.yourEmail} onChange={e => update("yourEmail", e.target.value)} placeholder="you@gmail.com" style={iStyle} /></div>
-              <div><label style={lStyle}>Wife's email</label><input type="email" value={settings.wifeEmail} onChange={e => update("wifeEmail", e.target.value)} placeholder="wife@gmail.com" style={iStyle} /></div>
+              <div><label style={lStyle}>Kathie's email</label><input type="email" value={settings.wifeEmail} onChange={e => update("wifeEmail", e.target.value)} placeholder="kathie@gmail.com" style={iStyle} /></div>
             </div>
             <div style={cardStyle}>
               <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Weekly digest</div>
@@ -146,10 +145,10 @@ export default function EmailSettings() {
         )}
         {tab === "send" && (
           <div>
-            {!settings.resendKey && <div style={{ background: "#fff8e1", border: "1px solid #ffe082", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#f57f17" }}>Add your Resend API key in Settings first.</div>}
-            <div style={cardStyle}><div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Send a test email</div><div style={{ fontSize: 13, color: "#888", marginBottom: 12 }}>Preview of the weekly digest.</div><button onClick={sendTestEmail} disabled={testSending || !settings.resendKey} style={btnStyle}>{testSending ? "Sending..." : "Send test email"}</button>{testResult && <div style={{ marginTop: 10, fontSize: 13, padding: "8px 12px", borderRadius: 8, background: testResult.ok ? "#e8f5e9" : "#ffebee", color: testResult.ok ? "#2e7d32" : "#c62828" }}>{testResult.msg}</div>}</div>
-            <div style={cardStyle}><div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Send weekly digest now</div><div style={{ fontSize: 13, color: "#888", marginBottom: 12 }}>Meal plan, grocery list, and expiry warnings.</div><button onClick={sendWeeklyNow} disabled={sending || !settings.resendKey} style={btnStyle}>{sending ? "Sending..." : "Send weekly digest now"}</button></div>
-            <div style={cardStyle}><div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Check & send emergency alert</div><div style={{ fontSize: 13, color: "#888", marginBottom: 12 }}>Alerts you both if essentials are missing.</div><button onClick={sendEmergencyNow} disabled={sending || !settings.resendKey} style={btnStyle}>{sending ? "Checking..." : "Check essentials & alert if low"}</button></div>
+            {(!settings.yourEmail && !settings.wifeEmail) && <div style={{ background: "#fff8e1", border: "1px solid #ffe082", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#f57f17" }}>Add email addresses in Settings first.</div>}
+            <div style={cardStyle}><div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Send a test email</div><div style={{ fontSize: 13, color: "#888", marginBottom: 12 }}>Preview of the weekly digest.</div><button onClick={sendTestEmail} disabled={testSending} style={btnStyle}>{testSending ? "Sending..." : "Send test email"}</button>{testResult && <div style={{ marginTop: 10, fontSize: 13, padding: "8px 12px", borderRadius: 8, background: testResult.ok ? "#e8f5e9" : "#ffebee", color: testResult.ok ? "#2e7d32" : "#c62828" }}>{testResult.msg}</div>}</div>
+            <div style={cardStyle}><div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Send weekly digest now</div><div style={{ fontSize: 13, color: "#888", marginBottom: 12 }}>Meal plan, grocery list, and expiry warnings.</div><button onClick={sendWeeklyNow} disabled={sending} style={btnStyle}>{sending ? "Sending..." : "Send weekly digest now"}</button></div>
+            <div style={cardStyle}><div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Check & send emergency alert</div><div style={{ fontSize: 13, color: "#888", marginBottom: 12 }}>Alerts you both if essentials are missing.</div><button onClick={sendEmergencyNow} disabled={sending} style={btnStyle}>{sending ? "Checking..." : "Check essentials & alert if low"}</button></div>
             {sendResult && <div style={{ fontSize: 13, padding: "10px 14px", borderRadius: 8, background: sendResult.ok ? "#e8f5e9" : "#ffebee", color: sendResult.ok ? "#2e7d32" : "#c62828" }}>{sendResult.msg}</div>}
           </div>
         )}
@@ -164,7 +163,7 @@ export default function EmailSettings() {
                 </div>
               ))}
             </div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <div style={{ display: "flex", gap: 8, marginTop: 12, marginBottom: 12 }}>
               <input value={newEssential} onChange={e => setNewEssential(e.target.value)} onKeyDown={e => e.key === "Enter" && addEssential()} placeholder="Add an essential item..." style={{ ...iStyle, flex: 1 }} />
               <button onClick={addEssential} style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid #e0d8cc", background: "#fff", color: "#333", fontSize: 13, cursor: "pointer", fontFamily: "Georgia, serif" }}>Add</button>
             </div>
