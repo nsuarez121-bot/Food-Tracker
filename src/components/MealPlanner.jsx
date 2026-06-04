@@ -89,10 +89,10 @@ export default function MealPlanner() {
       const meals = JSON.parse(data.content?.[0]?.text.replace(/```json|```/g, "").trim() || "[]");
       const newPlan = plan.map(p => { if (p.locked) return p; const m = meals.find(m => m.day === p.day); return m ? { ...p, meal: m } : p; });
       setPlan(newPlan); await savePlan(newPlan, null, null);
-    } catch (e) { console.error(e); }
-    setLoading(false);
-  };
-
+    } catch (e) { 
+  console.error(e); 
+  alert("Meal plan error: " + e.message); // remove after confirmed working
+}
   const swapMeal = async (idx) => {
     setSwapLoading(true);
     try {
