@@ -38,10 +38,9 @@ export default function MealPlanner() {
   const [showGrocery, setShowGrocery] = useState(false);
   const [groceryLoading, setGroceryLoading] = useState(false);
   const [notes, setNotes] = useState({});
+  const [prefs, setPrefs] = useState({ hardNos: [], cuisineLoves: [], cuisineHates: [], dietaryNeeds: [] });
 
   useEffect(() => { loadAll(); }, []);
-
-  const [prefs, setPrefs] = useState({ hardNos: [], cuisineLoves: [], cuisineHates: [], dietaryNeeds: [] });
 
   const loadAll = async () => {
     try {
@@ -82,25 +81,41 @@ export default function MealPlanner() {
       const lockedMeals = plan.filter(p => p.locked && !p.isPrep).map(p => `${p.day}: ${p.meal?.name}`).join(", ");
       const unlockedDays = plan.filter(p => !p.locked && !p.isPrep).map(p => p.day);
       const res = await fetch("/api/meal-plan", {
-  method: "POST", headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: ..., system: ..., messages: ... })
-});
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-5",
+          max_tokens: 1000,
+          system: `You are a helpful meal planner. Respond ONLY with a valid JSON array, no markdown.\nEach element: { "day": "...", "name": "...", "description": "one short sentence", "usesExpiring": true/false, "mainIngredients": ["...", "..."] }`,
+          messages: [{ role: "user", content: `Plan dinners for: ${unlockedDays.join(", ")}.\nSunday is meal prep day — suggest meals using roasted chicken/veggies (wraps, stir fries, grain bowls).\nPantry: ${pantryText}.\n${extras ? `Extra ingredients: ${extras}.` : ""}\n${lockedMeals ? `Locked: ${lockedMeals}` : ""}\n${prefs.hardNos.length > 0 ? `NEVER use these ingredients: ${prefs.hardNos.join(", ")}.` : ""}\n${prefs.cuisineLoves.length > 0 ? `We love these cuisines: ${prefs.cuisineLoves.join(", ")}.` : ""}\n${prefs.cuisineHates.length > 0 ? `We dislike these cuisines: ${prefs.cuisineHates.join(", ")}.` : ""}\n${prefs.dietaryNeeds.length > 0 ? `Dietary needs: ${prefs.dietaryNeeds.join(", ")}.` : ""}\nPrioritise expiring items. Return only unlocked days as JSON array.` }]
+        })
+      });
       const data = await res.json();
       const meals = JSON.parse(data.content?.[0]?.text.replace(/```json|```/g, "").trim() || "[]");
       const newPlan = plan.map(p => { if (p.locked) return p; const m = meals.find(m => m.day === p.day); return m ? { ...p, meal: m } : p; });
       setPlan(newPlan); await savePlan(newPlan, null, null);
-    } catch (e) { 
-  console.error(e); 
-  alert("Meal plan error: " + e.message); // remove after confirmed working
-}
+    } catch (e) {
+      console.error(e);
+      alert("Meal plan error: " + e.message);
+    }
+    setLoading(false);
+  };
+
   const swapMeal = async (idx) => {
     setSwapLoading(true);
     try {
       const day = plan[idx].day; const current = plan[idx].meal?.name;
+      const otherMeals = plan.filter((_, i) => i !== idx).map(p => p.meal?.name).filter(Boolean);
       const res = await fetch("/api/meal-plan", {
-  method: "POST", headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: ..., system: ..., messages: ... })
-});
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-5",
+          max_tokens: 400,
+          system: `Meal planner. Respond ONLY with single JSON object: { "day": "...", "name": "...", "description": "...", "usesExpiring": false, "mainIngredients": [] }`,
+          messages: [{ role: "user", content: `Different dinner for ${day}. Not: ${current}. Others: ${otherMeals.join(", ")}. Pantry: ${pantryText}. ${swapPrompt ? `Request: ${swapPrompt}` : ""}` }]
+        })
+      });
       const data = await res.json();
       const meal = JSON.parse(data.content?.[0]?.text.replace(/```json|```/g, "").trim() || "{}");
       const newPlan = plan.map((p, i) => i === idx ? { ...p, meal } : p);
@@ -116,10 +131,16 @@ export default function MealPlanner() {
     setGroceryLoading(true); setShowGrocery(true);
     try {
       const mealsText = plan.filter(p => p.meal).map(p => `${p.day}: ${p.meal.name} (needs: ${p.meal.mainIngredients?.join(", ")})`).join("\n");
-     const res = await fetch("/api/meal-plan", {
-  method: "POST", headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: ..., system: ..., messages: ... })
-});
+      const res = await fetch("/api/meal-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-5",
+          max_tokens: 800,
+          system: `Shopping assistant. Respond ONLY with a JSON array of strings.`,
+          messages: [{ role: "user", content: `Meals:\n${mealsText}\n\nPantry: ${pantryText}\n\nWhat to buy? Only missing. Return JSON array.` }]
+        })
+      });
       const data = await res.json();
       const list = JSON.parse(data.content?.[0]?.text.replace(/```json|```/g, "").trim() || "[]");
       setGroceryList(list); await savePlan(null, null, list);
