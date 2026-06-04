@@ -81,13 +81,10 @@ export default function MealPlanner() {
     try {
       const lockedMeals = plan.filter(p => p.locked && !p.isPrep).map(p => `${p.day}: ${p.meal?.name}`).join(", ");
       const unlockedDays = plan.filter(p => !p.locked && !p.isPrep).map(p => p.day);
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-5", max_tokens: 1000,
-          system: `You are a helpful meal planner. Respond ONLY with a valid JSON array, no markdown.\nEach element: { "day": "...", "name": "...", "description": "one short sentence", "usesExpiring": true/false, "mainIngredients": ["...", "..."] }`,
-messages: [{ role: "user", content: `Plan dinners for: ${unlockedDays.join(", ")}.\nSunday is meal prep day — suggest meals using roasted chicken/veggies (wraps, stir fries, grain bowls).\nPantry: ${pantryText}.\n${extras ? `Extra ingredients: ${extras}.` : ""}\n${lockedMeals ? `Locked: ${lockedMeals}` : ""}\n${prefs.hardNos.length > 0 ? `NEVER use these ingredients: ${prefs.hardNos.join(", ")}.` : ""}\n${prefs.cuisineLoves.length > 0 ? `We love these cuisines: ${prefs.cuisineLoves.join(", ")}.` : ""}\n${prefs.cuisineHates.length > 0 ? `We dislike these cuisines: ${prefs.cuisineHates.join(", ")}.` : ""}\n${prefs.dietaryNeeds.length > 0 ? `Dietary needs: ${prefs.dietaryNeeds.join(", ")}.` : ""}\nPrioritise expiring items. Return only unlocked days as JSON array.` }]        })
-      });
+      const res = await fetch("/api/meal-plan", {
+  method: "POST", headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: ..., system: ..., messages: ... })
+});
       const data = await res.json();
       const meals = JSON.parse(data.content?.[0]?.text.replace(/```json|```/g, "").trim() || "[]");
       const newPlan = plan.map(p => { if (p.locked) return p; const m = meals.find(m => m.day === p.day); return m ? { ...p, meal: m } : p; });
